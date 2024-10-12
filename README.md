@@ -1,4 +1,4 @@
-# Tomographic reconstruction of longitudinally invariant femtosecond waveguides
+# Tomographic reconstruction of longitudinally invariant femtosecond laser written waveguides
 
 This project contains a streamlined version of the code originally developed at
 the Medical University of Innsbruck and used for the waveguide reconstructions described in article [1]:
