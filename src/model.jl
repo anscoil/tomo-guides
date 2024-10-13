@@ -73,7 +73,7 @@ struct Wg_bpm
     p_medium
     cosθv
     k0dz
-    n0
+    λ; n0; nx; nz; dx; dz
     A_u
     uf
     Ith
@@ -95,7 +95,8 @@ struct Wg_bpm
         k0dz = T(2π/λ*dz)
         A_u = similar(p_bpm.G, (nx,nθ,nz))
         uf = similar(p_bpm.G)
-        new(p_bpm, p_bpm_half, p_medium, cosθv, k0dz, T(n0), A_u, uf, Ith)
+        new(p_bpm, p_bpm_half, p_medium, cosθv, k0dz,
+            T(λ), T(n0), nx, nz, T(dx), T(dz), A_u, uf, Ith)
     end
 end
 
@@ -110,6 +111,7 @@ struct Wg_ϕ{Wg_T}
     pfft
     pifft
     Zkv
+    NA
     
     function Wg_ϕ{Wg_T}(λ::Real, n0::Real,
                         nx::Integer, nz::Integer,
@@ -134,17 +136,14 @@ struct Wg_ϕ{Wg_T}
                        for fx in fxv, f0 in f0v])
         Zkv = similar(ϕ, (nx,nθ,1+nzk))
         poly_defocus = [if abs(fx+f0) <= abs(NA/λ);
-                        T(sqrt(1/(λ/n0)^2-(fx+f0)^2) - n0/λ); # + λ/(2*n0)*(fx+f0)^2);
+                        T(sqrt(1/(λ/n0)^2-(fx+f0)^2) - n0/λ);
                         else T(0) end for fx in fxv, f0 in f0v]
-        # poly_defocus ./= norm(poly_defocus)
         copyto!(@view(Zkv[:,:,1]), poly_defocus)
         f_zk = p -> make_poly(fxv, f0v, λ, NA, p)
-        # f_zk = p -> make_ortho_poly(fxv, f0v, poly_defocus, λ, NA, p)
-        # copyto!(@view(Zkv[:,:,2]), f_zk(1))
         for p in 1:nzk
             copyto!(@view(Zkv[:,:,1+p]), f_zk(2*p))
         end
-        new{Wg_T}(wg, wg.uf, wg.Ith, fft_uf, kxv, ϕ, ∇ϕ, pfft, pifft, Zkv)
+        new{Wg_T}(wg, wg.uf, wg.Ith, fft_uf, kxv, ϕ, ∇ϕ, pfft, pifft, Zkv, T(NA))
     end
 end
 
@@ -286,8 +285,6 @@ function compute_fwd_wg_Zk!(wg::Wg_ϕ,
     @assert nzk == size(wg.Zkv,3)
     zkvr = reshape(zkv, (1,1,nzk))
     @views wg.ϕ .= sum(wg.Zkv .* zkvr, dims=3)[:,:,1]
-    # defocus = @view(wg.Zkv[:,:,1])
-    # wg.ϕ .-= dot(defocus,wg.ϕ).*defocus./norm(defocus)^2
     compute_fwd_wg!(wg, (RI, wg.ϕ))
 end
 
@@ -303,9 +300,25 @@ function compute_grad_wg_Zk!(wg::Wg_ϕ,
     @assert nzk == size(wg.Zkv,3)
     zkvr = reshape(zkv, (1,1,nzk))
     @views wg.ϕ .= sum(wg.Zkv .* zkvr, dims=3)[:,:,1]
-    # defocus = @view(wg.Zkv[:,:,1])
-    # wg.ϕ .-= dot(defocus,wg.ϕ).*defocus./norm(defocus)^2
     compute_grad_wg!(wg, (RI, wg.ϕ), (∇RI, wg.∇ϕ), uf)
     @views ∇zkv .= sum(wg.Zkv .* wg.∇ϕ, dims=(1,2))[1,1,:]
     ∇RIZ
+end
+
+function get_aberration(wg::Wg_bpm_ϕ, zkv)
+    λ = wg.wg.λ
+    nx = wg.wg.nx
+    dx = wg.wg.dx
+    n0 = wg.wg.n0
+    NA = wg.NA
+    
+    pmax = length(zkv)
+    fxv = fftfreq(nx, 1/dx)
+    defocus = [if abs(fx) <= abs(NA/λ);
+               sqrt(1/(λ/n0)^2-fx^2) - n0/λ;
+               else 0.0 end for fx in fxv]
+    l = [if abs(fx) <= abs(NA/λ); (abs(fx)*λ/NA)^(2*p); else 0.0 end
+         for fx in fxv, p in 1:pmax-1]
+    A = sum(l .* zkv[2:end]', dims=2)[:,1]
+    fftshift(fxv)*λ, fftshift(A .+ zkv[1]*defocus)
 end
