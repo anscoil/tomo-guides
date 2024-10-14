@@ -1,5 +1,3 @@
-using CUDA
-
 function D!(DA::AbstractArray{T,3}, A::AbstractArray{T,2},
             dx::Real, dz::Real) where T
     @assert size(DA,1) == size(A,1)
@@ -51,37 +49,6 @@ function proj_G2!(G::AbstractArray{T,3}) where T
             end
         end
     end
-    G
-end
-
-function proj_G2_kernel(G::CuDeviceArray{T,3}) where T
-    n, m, d = size(G)
-    ix = (blockIdx().x - 1)*blockDim().x + threadIdx().x
-    jx = (blockIdx().y - 1)*blockDim().y + threadIdx().y
-    
-    stride_x = blockDim().x * gridDim().x
-    stride_y = blockDim().y * gridDim().y
-    @inbounds for j in jx:stride_y:m
-        for i in ix:stride_x:n
-            nl2 = real(T)(0)
-            for k in 1:d
-                nl2 += abs(G[i,j,k])^2
-            end
-            nl2 = sqrt(nl2)
-            if nl2 > 1
-                for k in 1:d
-                    G[i,j,k] /= nl2
-                end
-            end
-        end
-    end
-    nothing
-end
-
-function proj_G2!(G::CuArray{T,3}) where T
-    n, m, d = size(G)
-    @cuda threads=(16,16) blocks=(Int(ceil(n/16)),Int(ceil(m/16))) (
-        proj_G2_kernel(G))
     G
 end
 
